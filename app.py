@@ -1,4 +1,3 @@
-
 import pickle
 import os
 import time
@@ -13,17 +12,95 @@ from sklearn.metrics.pairwise import cosine_similarity
 st.set_page_config(
     page_title="Movie Recommendation System",
     page_icon="🎬",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-st.title("🎬 Movie Recommendation System")
+# ---------------- CUSTOM CSS ---------------- #
+st.markdown("""
+<style>
+    /* Overall background */
+    .stApp {
+        background: linear-gradient(180deg, #0f0f1a 0%, #14141f 100%);
+    }
+
+    /* Main title */
+    .main-title {
+        font-size: 10rem;
+        font-weight: 800;
+        background: linear-gradient(90deg, #ff4b6e, #ff8a4c);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
+        text-align: center;
+        line-height: 1.3;
+    }
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #16161f;
+        border-right: 1px solid #2a2a3a;
+    }
+    section[data-testid="stSidebar"] h2, 
+    section[data-testid="stSidebar"] h3 {
+        color: #ff8a4c;
+    }
+
+    /* Movie cards */
+    .movie-card {
+        background-color: #1b1b28;
+        border-radius: 14px;
+        padding: 10px;
+        text-align: center;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border: 1px solid #2a2a3a;
+    }
+    .movie-card:hover {
+        transform: translateY(-6px);
+        box-shadow: 0 10px 25px rgba(255, 75, 110, 0.25);
+        border: 1px solid #ff4b6e;
+    }
+    .movie-title {
+        color: #f2f2f5;
+        font-weight: 600;
+        font-size: 0.95rem;
+        margin-top: 8px;
+        min-height: 42px;
+    }
+
+    /* Buttons */
+    .stButton > button {
+        background: linear-gradient(90deg, #ff4b6e, #ff8a4c);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.6rem 1.2rem;
+        font-weight: 600;
+        width: 100%;
+        transition: opacity 0.2s ease;
+    }
+    .stButton > button:hover {
+        opacity: 0.85;
+        color: white;
+    }
+
+    /* Selectbox label */
+    .stSelectbox label {
+        color: #d0d0e0 !important;
+        font-weight: 600;
+    }
+
+    footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
 
 # ---------------- LOAD ENV ---------------- #
 load_dotenv()
 
-API_KEY ="8265bd1679663a7ea12ac168da84d2e8"
+API_KEY = os.getenv("TMDB_API_KEY", "8265bd1679663a7ea12ac168da84d2e8")
 
 session = requests.Session()
+
 
 # ---------------- LOAD DATA ---------------- #
 @st.cache_resource
@@ -45,47 +122,39 @@ def load_data():
 movies, similarity = load_data()
 
 
-# ---------------- FETCH POSTER ---------------- #
-def fetch_poster(movie_id):
+# ---------------- FETCH MOVIE DETAILS ---------------- #
+def fetch_details(movie_id):
+    """Fetch poster, rating, and release year for a movie."""
 
     url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={API_KEY}&language=en-US"
-
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     for _ in range(2):
-
         try:
-
-            response = session.get(
-                url,
-                headers=headers,
-                timeout=10
-            )
-
+            response = session.get(url, headers=headers, timeout=10)
             response.raise_for_status()
-
             data = response.json()
 
             poster_path = data.get("poster_path")
+            poster = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
 
-            if poster_path:
-                return f"https://image.tmdb.org/t/p/w500{poster_path}"
+            rating = data.get("vote_average")
+            release_date = data.get("release_date", "")
+            year = release_date.split("-")[0] if release_date else "N/A"
 
-            return None
+            return {"poster": poster, "rating": rating, "year": year}
 
         except requests.exceptions.ConnectionError:
             time.sleep(1)
 
         except Exception:
-            return None
+            return {"poster": None, "rating": None, "year": "N/A"}
 
-    return None
+    return {"poster": None, "rating": None, "year": "N/A"}
 
 
 # ---------------- RECOMMEND ---------------- #
-def recommend(movie):
+def recommend(movie, num_results=5):
 
     index = movies[movies["title"] == movie].index[0]
 
@@ -97,44 +166,105 @@ def recommend(movie):
 
     recommendations = []
 
-    for item in distances[1:6]:
+    for item in distances[1:num_results + 1]:
 
         movie_index = item[0]
+        details = fetch_details(int(movies.iloc[movie_index].movie_id))
 
         recommendations.append({
             "title": movies.iloc[movie_index].title,
-            "poster": fetch_poster(
-                int(movies.iloc[movie_index].movie_id)
-            )
+            "poster": details["poster"],
+            "rating": details["rating"],
+            "year": details["year"],
         })
 
     return recommendations
 
 
-# ---------------- UI ---------------- #
-selected_movie = st.selectbox(
-    "Select a Movie",
-    movies["title"].values
-)
+# ---------------- SIDEBAR ---------------- #
+with st.sidebar:
+    st.markdown("## 🎬 Movie Finder")
+    st.markdown("Discover movies similar to your favorites using content-based filtering.")
 
-if st.button("Recommend"):
+    st.markdown("---")
+    st.markdown("### ⚙️ Settings")
+
+    num_results = st.slider(
+        "Number of recommendations",
+        min_value=3,
+        max_value=10,
+        value=5
+    )
+
+    show_ratings = st.checkbox("Show ratings & year", value=True)
+
+    st.markdown("---")
+    st.markdown("### 🔍 Quick Search")
+    search_term = st.text_input("Filter movie list", placeholder="e.g. Batman")
+
+    st.markdown("---")
+    st.markdown("### ℹ️ About")
+    st.markdown(
+        "Built with **Streamlit** + **scikit-learn** cosine similarity "
+        "on movie tags. Posters & metadata via **TMDB API**."
+    )
+
+# ---------------- MAIN HEADER ---------------- #
+st.markdown('<p class="main-title">✨ Movie Recommendation System — Powered by AI ✨</p>', unsafe_allow_html=True)
+
+# ---------------- MOVIE LIST (filtered by sidebar search) ---------------- #
+movie_titles = movies["title"].values
+
+if search_term:
+    filtered_titles = [t for t in movie_titles if search_term.lower() in t.lower()]
+    if not filtered_titles:
+        st.warning("No movies match your search. Showing full list instead.")
+        filtered_titles = movie_titles
+else:
+    filtered_titles = movie_titles
+
+# ---------------- UI ---------------- #
+col_select, col_button = st.columns([4, 1])
+
+with col_select:
+    selected_movie = st.selectbox(
+        "Select a Movie",
+        filtered_titles
+    )
+
+with col_button:
+    st.markdown("<br>", unsafe_allow_html=True)
+    recommend_clicked = st.button("✨ Recommend")
+
+if recommend_clicked:
 
     with st.spinner("Finding similar movies..."):
+        recommendations = recommend(selected_movie, num_results)
 
-        recommendations = recommend(selected_movie)
+    st.markdown("### Recommended for you")
 
-    cols = st.columns(5)
+    cols = st.columns(min(num_results, 5))
 
-    for col, movie in zip(cols, recommendations):
+    for i, movie in enumerate(recommendations):
+
+        col = cols[i % len(cols)]
 
         with col:
-
-            st.markdown(f"**{movie['title']}**")
+            st.markdown('<div class="movie-card">', unsafe_allow_html=True)
 
             if movie["poster"]:
-                st.image(
-                    movie["poster"],
-                    use_container_width=True
-                )
+                st.image(movie["poster"], use_container_width=True)
             else:
-                st.write("Poster Not Available")
+                st.write("🎞️ Poster Not Available")
+
+            st.markdown(f'<div class="movie-title">{movie["title"]}</div>', unsafe_allow_html=True)
+
+            if show_ratings:
+                rating_display = f"⭐ {movie['rating']:.1f}" if movie["rating"] else "⭐ N/A"
+                st.caption(f"{rating_display}  •  📅 {movie['year']}")
+
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # wrap to new row every 5 items if num_results > 5
+        if (i + 1) % 5 == 0 and (i + 1) < len(recommendations):
+            cols = st.columns(min(num_results - (i + 1), 5))
