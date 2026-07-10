@@ -4,13 +4,6 @@ A content-based Movie Recommendation System built using **Python, Machine Learni
 
 ---
 
-## 🚀 Live Demo
-
-**Streamlit App:** *# 🎬 Movie Recommendation System
-
-A content-based Movie Recommendation System built using **Python, Machine Learning, NLP, and Streamlit**. The application recommends movies similar to the one selected by the user and displays their posters using the TMDB API.
-
----
 
 ## 🚀 Live Demo
 
